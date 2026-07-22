@@ -95,14 +95,15 @@ function fmtEta(min) {
 
 /* ------------------------------------------------------------- bloc CFR */
 
-const CFR_TARGET = 12000000;
-
 function renderCfr(cfr, cfrMetrics) {
   const section = $("cfr-section");
   if (!cfr) { section.hidden = true; return; }
   section.hidden = false;
   $("c-iters").textContent = cfr.iters.toLocaleString("fr-FR");
-  $("c-iters-pct").textContent = `${Math.min(100, cfr.iters / CFR_TARGET * 100).toFixed(1)} % de l'objectif`;
+  // Objectif déduit du ticker : itérations faites + (vitesse × temps restant)
+  const target = cfr.iters + cfr.speed * cfr.eta_min * 60;
+  const pct = target > 0 ? Math.min(100, cfr.iters / target * 100) : 100;
+  $("c-iters-pct").textContent = `${pct.toFixed(1)} % de l'objectif`;
   $("c-infosets").textContent = cfr.infosets.toLocaleString("fr-FR");
   $("c-speed").textContent = cfr.speed.toFixed(0);
   $("c-eta").textContent = fmtEta(cfr.eta_min);

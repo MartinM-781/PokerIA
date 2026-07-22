@@ -36,12 +36,22 @@ STATIC_FILES = {
     "/training.js": ("training.js", "text/javascript; charset=utf-8"),
 }
 PROGRESS_PATH = os.path.join(BASE_DIR, "models", "progress.csv")
-# Le suivi CFR pointe sur l'entraînement le plus récent (v2 si présent).
-_CFR_DIR = (os.path.join(BASE_DIR, "models", "cfr_v2")
-            if os.path.exists(os.path.join(BASE_DIR, "models", "cfr_v2", "cfr_progress.csv"))
-            else os.path.join(BASE_DIR, "models"))
-CFR_PROGRESS_PATH = os.path.join(_CFR_DIR, "cfr_progress.csv")
-CFR_METRICS_PATH = os.path.join(_CFR_DIR, "cfr_metrics.csv")
+
+
+def _cfr_dir():
+    """Dossier du suivi CFR : celui dont le ticker a écrit le plus récemment —
+    la page /training suit ainsi automatiquement le run actif (v2, v3, …)."""
+    candidates = [os.path.join(BASE_DIR, "models", d) for d in
+                  ("cfr_v3", "cfr_v2", "")]
+    best, best_mtime = candidates[-1], -1.0
+    for d in candidates:
+        try:
+            mtime = os.path.getmtime(os.path.join(d, "cfr_progress.csv"))
+        except OSError:
+            continue
+        if mtime > best_mtime:
+            best, best_mtime = d, mtime
+    return best
 
 
 class ApiError(Exception):
@@ -413,7 +423,7 @@ def _load_csv(path, fields):
 
 
 def load_cfr_progress():
-    rows = _load_csv(CFR_PROGRESS_PATH, {
+    rows = _load_csv(os.path.join(_cfr_dir(), "cfr_progress.csv"), {
         "iters": ("iterations", int),
         "infosets": ("situations", int),
         "speed": ("iters_par_s", float),
@@ -423,7 +433,7 @@ def load_cfr_progress():
 
 
 def load_cfr_metrics():
-    return _load_csv(CFR_METRICS_PATH, {
+    return _load_csv(os.path.join(_cfr_dir(), "cfr_metrics.csv"), {
         "iters": ("iterations", int),
         "vs_regles": ("bb100_vs_regles", float),
         "vs_dqn": ("bb100_vs_dqn", float),

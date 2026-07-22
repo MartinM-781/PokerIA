@@ -27,6 +27,34 @@ from train_cfr import safe_append
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+RAM_CEILING = 0.90  # ne jamais utiliser plus de 90 % de la RAM machine
+
+
+def _ram_gb():
+    """(disponible, totale) en Go — via l'API Windows, sans dépendance."""
+    import ctypes
+
+    class MemStatus(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                    ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                    ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                    ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64)]
+
+    m = MemStatus()
+    m.dwLength = ctypes.sizeof(MemStatus)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+    return m.ullAvailPhys / 1e9, m.ullTotalPhys / 1e9
+
+
+def adaptive_workers(want, n_nodes, growth_nodes_per_thread):
+    """Nombre de threads qui tient sous le plafond RAM : chaque thread clone la
+    table (~140 o/nœud) puis la fait grossir pendant son bloc ; la fusion garde
+    toutes les copies vivantes brièvement. On garde 10 % de la machine libre."""
+    avail, total = _ram_gb()
+    budget = max(avail - (1.0 - RAM_CEILING) * total, 0.5)
+    per_thread = (n_nodes + growth_nodes_per_thread) * 140 / 1e9 + 0.05
+    return max(2, min(want, int(budget / per_thread) - 1))
+
 
 def play_match(policy, opponent, n_hands, rng):
     results = np.zeros(n_hands)
@@ -102,17 +130,24 @@ def main():
 
     t0 = time.time()
     pending = None  # instantané en attente d'évaluation (superposé au calcul)
+    growth_per_thread = args.chunk * 110  # estimation initiale, affinée par cycle
     while trainer.iterations < args.iters:
         seed = args.seed + trainer.iterations  # graine distincte par cycle
+        n_before = len(trainer)
+        workers = adaptive_workers(args.workers, n_before, growth_per_thread)
+        if workers < args.workers:
+            print(f"  (RAM : {workers} threads ce cycle au lieu de {args.workers})",
+                  flush=True)
         # Lance le calcul du cycle dans un thread : run_parallel relâche le GIL,
         # donc le checkpoint du cycle précédent tourne en parallèle ci-dessous.
         compute = threading.Thread(
-            target=trainer.run_cycle, args=(args.workers, args.chunk, seed, args.sims))
+            target=trainer.run_cycle, args=(workers, args.chunk, seed, args.sims))
         compute.start()
         if pending is not None:
             checkpoint(pending)
             pending = None
         compute.join()
+        growth_per_thread = max((len(trainer) - n_before) // max(workers, 1), 1000)
         pending = trainer.snapshot()
 
     if pending is not None:  # dernier checkpoint (plus rien à superposer)
