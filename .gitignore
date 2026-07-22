@@ -1,0 +1,15 @@
+# Blueprints CFR : trop lourds pour git (~400 MB) — distribués via les Releases GitHub
+*.pkl
+*.tmp
+*.tmp.npz
+
+# Espace de travail des ouvriers parallèles
+models/cfr_workers/
+models/cfr_v2/cfr_workers/
+
+# Session de jeu personnelle
+models/session.json
+
+# Python
+__pycache__/
+*.pyc
