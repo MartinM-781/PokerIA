@@ -271,6 +271,10 @@ pub fn solve_street(
                 .collect()
         })
         .collect();
+    // pour chaque main adverse j : indices des mains héros en conflit
+    let conflict_idx: Vec<Vec<usize>> = (0..no)
+        .map(|j| (0..nh).filter(|&i| conflict[i][j]).collect())
+        .collect();
 
     // Traversée vectorisée sur les mains : à chaque nœud, on propage les
     // valeurs attendues main-par-main du joueur au trait contre la range
@@ -286,6 +290,7 @@ pub fn solve_street(
         opp_reach: &[f64],
         eq: &[Vec<f32>],
         conflict: &[Vec<bool>],
+        conflict_idx: &[Vec<usize>],
         hero_w: &[f64],
         opp_w: &[f64],
     ) -> Vec<f64> {
@@ -354,7 +359,7 @@ pub fn solve_street(
                 }
                 child_vals.push(cfr(
                     nd.children[k], nodes, regrets, strat_sum, &hr, opp_reach,
-                    eq, conflict, hero_w, opp_w,
+                    eq, conflict, conflict_idx, hero_w, opp_w,
                 ));
             }
             let mut vals = vec![0f64; nh];
@@ -401,7 +406,7 @@ pub fn solve_street(
                 }
                 child_vals.push(cfr(
                     nd.children[k], nodes, regrets, strat_sum, hero_reach, &or_,
-                    eq, conflict, hero_w, opp_w,
+                    eq, conflict, conflict_idx, hero_w, opp_w,
                 ));
             }
             // valeur héros = somme pondérée par la stratégie adverse « moyenne
@@ -431,23 +436,44 @@ pub fn solve_street(
                 }
                 vals[i] = v;
             }
-            // mise à jour des regrets adverses : valeur adverse = -valeur héros
-            // moyennée sur la range héros atteinte
+            // Mise à jour des regrets adverses : valeur adverse = −valeur héros
+            // moyennée sur la range héros atteinte. Le calcul naïf est
+            // O(no × nh × actions) ; comme child_vals ne dépend pas de j, on
+            // sépare : somme globale − contributions des mains en conflit de
+            // cartes (≈ une poignée par j) → O(nh + no × |conflits|).
+            let mut sum_w = 0f64; // Σ_i poids héros
+            for i in 0..nh {
+                sum_w += hero_reach[i] * hero_w[i];
+            }
+            let mut sum_wv = [0f64; N_ACT]; // Σ_i poids × (−valeur enfant)
+            for (k, &a) in nd.legal.iter().enumerate() {
+                let mut s = 0.0;
+                for i in 0..nh {
+                    s += hero_reach[i] * hero_w[i] * (-child_vals[k][i]);
+                }
+                sum_wv[a as usize] = s;
+            }
             for j in 0..no {
+                // retire les mains héros partageant une carte avec j
+                // (liste pré-calculée : une poignée d'indices par j)
+                let mut cw = 0f64;
+                let mut cwv = [0f64; N_ACT];
+                for &i in &conflict_idx[j] {
+                    let w = hero_reach[i] * hero_w[i];
+                    cw += w;
+                    for (k, &a) in nd.legal.iter().enumerate() {
+                        cwv[a as usize] += w * (-child_vals[k][i]);
+                    }
+                }
+                let den = sum_w - cw;
                 let mut per_action = [0f64; N_ACT];
                 let mut base = 0.0;
-                for (k, &a) in nd.legal.iter().enumerate() {
-                    let mut num = 0.0;
-                    let mut den = 0.0;
-                    for i in 0..nh {
-                        if conflict[i][j] {
-                            continue;
-                        }
-                        let w = hero_reach[i] * hero_w[i];
-                        num += w * (-child_vals[k][i]);
-                        den += w;
-                    }
-                    let av = if den > 0.0 { num / den } else { 0.0 };
+                for &a in &nd.legal {
+                    let av = if den > 0.0 {
+                        (sum_wv[a as usize] - cwv[a as usize]) / den
+                    } else {
+                        0.0
+                    };
                     per_action[a as usize] = av;
                     base += sigma[j][a as usize] * av;
                 }
@@ -466,7 +492,7 @@ pub fn solve_street(
     for _ in 0..iterations {
         cfr(
             root, &nodes, &mut regrets, &mut strat_sum, &hero_reach, &opp_reach,
-            &eq, &conflict, hero_weights, opp_weights,
+            &eq, &conflict, &conflict_idx, hero_weights, opp_weights,
         );
     }
 

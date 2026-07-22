@@ -20,14 +20,14 @@ from . import game
 from .cfr import CFRPolicy, NodeStore
 from .ranges import HandRanges
 
-TOP_K = 250  # mains conservées par range (les plus probables) pour la vitesse
+TOP_K = 120  # mains conservées par range — le coût du résolveur est ~quadratique
 
 
 class SearchPolicy:
     """Politique = blueprint préflop + résolution temps réel postflop."""
 
     def __init__(self, store_or_path, rng, native, n_sims=200,
-                 iterations=400, n_runouts=100):
+                 iterations=120, n_runouts=60):
         self.store = (store_or_path if isinstance(store_or_path, NodeStore)
                       else NodeStore.load(store_or_path))
         self.rng = rng
