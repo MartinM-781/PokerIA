@@ -23,10 +23,9 @@ from .features import _board_texture
 
 N_BUCKETS = 12          # buckets d'équité postflop (v1)
 N_BUCKETS_RIVER = 16    # v2 : river plus fine (plus de tirages, que des mains faites)
-LATEST_VERSION = 3      # v3 : ajoute les tailles ¼ et ⅓ pot
-# fold, check/call, half-pot, pot, all-in, quarter-pot, third-pot
-# (l'ordre suit les indices d'action du moteur)
-ACTION_CHARS = "fchpaqt"
+LATEST_VERSION = 3      # v3 : ajoute la taille ⅓ pot
+# fold, check/call, half-pot, pot, all-in, third-pot (indices d'action du moteur)
+ACTION_CHARS = "fchpat"
 
 
 # ------------------------------------------------------------- abstraction
@@ -124,8 +123,8 @@ N_A = game.N_ACTIONS  # 7 (abstraction courante)
 
 def n_actions_for(version):
     """Nombre d'actions de l'abstraction d'un blueprint (les indices 0..4 sont
-    communs à toutes les versions ; v3 ajoute ¼ et ⅓ pot aux indices 5 et 6)."""
-    return 7 if version >= 3 else 5
+    communs à toutes les versions ; v3 ajoute le ⅓ pot à l'indice 5)."""
+    return 6 if version >= 3 else 5
 
 
 class NodeStore:

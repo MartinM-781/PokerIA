@@ -119,13 +119,30 @@ class GameSession:
         state["start"] = start
         return state
 
+    def _brain_actions(self):
+        """Nombre d'actions que le cerveau servi connaît : les actions plus
+        récentes que lui (ex. ⅓ pot face à un blueprint v2) sont retirées du
+        jeu — sinon l'humain l'attaquerait sur des lignes qu'il n'a jamais
+        apprises, ce qui fausserait le duel."""
+        store = getattr(self.ai, "store", None)
+        if store is not None:
+            return store.n_actions
+        net = getattr(self.ai, "net", None)
+        if net is not None:
+            return net.params["b3"].shape[0]
+        return game.N_ACTIONS
+
+    def _legal_for_human(self):
+        na = self._brain_actions()
+        return [a for a in self.hand.legal_actions() if a < na]
+
     def human_action(self, action):
         h = self.hand
         if h is None or h.terminal:
             raise ApiError("Aucune main en cours — clique sur « Nouvelle main ».")
         if h.to_act != HUMAN:
             raise ApiError("Ce n'est pas ton tour.")
-        if action not in h.legal_actions():
+        if action not in self._legal_for_human():
             raise ApiError("Action illégale.")
         events = self._apply(HUMAN, action)
         events += self._advance_ai()
@@ -233,7 +250,6 @@ class GameSession:
 
         return {
             "call": int(min(to_call, h.stacks[HUMAN])),
-            "quarter": bet_to(pot_after_call // 4),
             "third": bet_to(pot_after_call // 3),
             "half": bet_to(pot_after_call // 2),
             "pot": bet_to(pot_after_call),
@@ -277,7 +293,7 @@ class GameSession:
             "button": int(h.button) if h else self.button,
             "to_call": int(h.to_call(HUMAN)) if your_turn else 0,
             "your_turn": your_turn,
-            "legal_actions": [int(a) for a in h.legal_actions()] if your_turn else [],
+            "legal_actions": [int(a) for a in self._legal_for_human()] if your_turn else [],
             "raise_preview": self._raise_preview() if your_turn else None,
             "terminal": h.terminal if h else True,
             "events": events,

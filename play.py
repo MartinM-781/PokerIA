@@ -15,15 +15,13 @@ from poker_ai.agent import NetworkPolicy
 from poker_ai.cards import cards_str
 from poker_ai.evaluator import CATEGORY_NAMES, hand_category
 from poker_ai.game import (ACTION_NAMES, ALL_IN, CHECK_CALL, FOLD, HeadsUpHand,
-                           RAISE_HALF, RAISE_POT, RAISE_QUARTER, RAISE_THIRD,
-                           STREET_NAMES)
+                           RAISE_HALF, RAISE_POT, RAISE_THIRD, STREET_NAMES)
 
 HUMAN, AI = 0, 1
-KEYS = {"f": FOLD, "c": CHECK_CALL, "q": RAISE_QUARTER, "t": RAISE_THIRD,
+KEYS = {"f": FOLD, "c": CHECK_CALL, "t": RAISE_THIRD,
         "r": RAISE_HALF, "p": RAISE_POT, "a": ALL_IN}
-KEY_LABELS = {FOLD: "[f]old", CHECK_CALL: "[c]heck/call", RAISE_QUARTER: "[q] ¼ pot",
-              RAISE_THIRD: "[t] ⅓ pot", RAISE_HALF: "[r]aise ½ pot",
-              RAISE_POT: "[p]ot raise", ALL_IN: "[a]ll-in"}
+KEY_LABELS = {FOLD: "[f]old", CHECK_CALL: "[c]heck/call", RAISE_THIRD: "[t] ⅓ pot",
+              RAISE_HALF: "[r]aise ½ pot", RAISE_POT: "[p]ot raise", ALL_IN: "[a]ll-in"}
 
 
 def ask_action(hand):

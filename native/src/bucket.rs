@@ -8,8 +8,8 @@ use crate::rng::Rng;
 const RANK_CHARS: [char; 13] = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const N_BUCKETS: usize = 12;
 const N_BUCKETS_RIVER: usize = 16;
-// fold, check/call, half, pot, all-in, quarter, third (indices d'action)
-pub const ACTION_CHARS: [char; 7] = ['f', 'c', 'h', 'p', 'a', 'q', 't'];
+// fold, check/call, half, pot, all-in, third (indices d'action)
+pub const ACTION_CHARS: [char; 6] = ['f', 'c', 'h', 'p', 'a', 't'];
 
 /// Classe canonique préflop parmi 169 : "AA", "AKs", "72o"…
 pub fn preflop_class(hole: &[u8; 2]) -> String {

@@ -5,22 +5,28 @@ chaque main. Le bouton poste la petite blind et parle en premier préflop,
 en dernier après le flop.
 
 Actions discrètes : FOLD, CHECK_CALL, RAISE_HALF (relance ½ pot),
-RAISE_POT (relance pot), ALL_IN, plus deux petites tailles RAISE_QUARTER
-(¼ pot) et RAISE_THIRD (⅓ pot) ajoutées aux indices 5 et 6 — les indices 0..4
-restent inchangés pour rester compatibles avec le réseau DQN figé.
+RAISE_POT (relance pot), ALL_IN, plus une petite taille RAISE_THIRD (⅓ pot)
+ajoutée à l'indice 5 — les indices 0..4 restent inchangés pour rester
+compatibles avec le réseau DQN figé. Le ⅓ pot cible la « petite mise » que les
+coachs ont identifiée comme la seule fuite exploitable. (Une seule taille
+ajoutée : deux feraient exploser l'arbre en tabulaire — cf. RAISE_CAP.)
 """
 import numpy as np
 
 from .evaluator import evaluate_hand
 
-FOLD, CHECK_CALL, RAISE_HALF, RAISE_POT, ALL_IN, RAISE_QUARTER, RAISE_THIRD = range(7)
-N_ACTIONS = 7
+FOLD, CHECK_CALL, RAISE_HALF, RAISE_POT, ALL_IN, RAISE_THIRD = range(6)
+N_ACTIONS = 6
 ACTION_NAMES = ["se couche", "check/call", "relance ½ pot", "relance pot",
-                "all-in", "relance ¼ pot", "relance ⅓ pot"]
+                "all-in", "relance ⅓ pot"]
 
 # Fraction du pot (après call) misée par chaque action de relance, en
 # arithmétique ENTIÈRE identique côté Rust. all-in traité à part.
-RAISE_SIZES = (RAISE_QUARTER, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN)
+RAISE_SIZES = (RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN)
+
+# Plafond de relances DIMENSIONNÉES par tour d'enchères : au-delà, seul le tapis
+# reste offert. Borne l'arbre (guerres de relances) comme les solveurs pros.
+RAISE_CAP = 4
 
 PREFLOP, FLOP, TURN, RIVER = range(4)
 STREET_NAMES = ["préflop", "flop", "turn", "river"]
@@ -79,7 +85,15 @@ class HeadsUpHand:
         if self.bets[o] > self.bets[p]:
             legal.insert(0, FOLD)
         if self.stacks[p] > self.bets[o] - self.bets[p] and self.stacks[o] > 0:
-            legal += [RAISE_QUARTER, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN]
+            if self.raises_this_street < RAISE_CAP:
+                # Le ⅓ pot n'est offert qu'en OUVERTURE du tour d'enchères :
+                # comme taille de sur-relance, sa lente escalade du pot rallonge
+                # les guerres de relances et fait exploser l'arbre (mesuré ×20).
+                if self.raises_this_street == 0:
+                    legal.append(RAISE_THIRD)
+                legal += [RAISE_HALF, RAISE_POT, ALL_IN]
+            else:  # plafond atteint : seul le tapis reste (borne l'arbre)
+                legal.append(ALL_IN)
         return legal
 
     def legal_mask(self):
@@ -111,9 +125,7 @@ class HeadsUpHand:
         else:
             self.history.append((self.street, p, action))
             pot_after_call = self.pot + to_call
-            if action == RAISE_QUARTER:
-                raise_by = pot_after_call // 4
-            elif action == RAISE_THIRD:
+            if action == RAISE_THIRD:
                 raise_by = pot_after_call // 3
             elif action == RAISE_HALF:
                 raise_by = pot_after_call // 2

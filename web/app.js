@@ -6,7 +6,7 @@ const SUITS = ["♠", "♥", "♦", "♣"];
 const RED = new Set([1, 2]);
 const STREETS = ["préflop", "flop", "turn", "river"];
 const FOLD = 0, CHECK_CALL = 1, RAISE_HALF = 2, RAISE_POT = 3, ALL_IN = 4,
-      RAISE_QUARTER = 5, RAISE_THIRD = 6;
+      RAISE_THIRD = 5;
 
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,14 +109,13 @@ function renderActions(state) {
     [CHECK_CALL]: state.to_call > 0
       ? [`Suivre ${bb(p.call)} BB`, "", "btn-call"]
       : ["Check", "", "btn-call"],
-    [RAISE_QUARTER]: ["Relance ¼ pot", `→ ${bb(p.quarter)} BB`, ""],
     [RAISE_THIRD]: ["Relance ⅓ pot", `→ ${bb(p.third)} BB`, ""],
     [RAISE_HALF]: ["Relance ½ pot", `→ ${bb(p.half)} BB`, ""],
     [RAISE_POT]: ["Relance pot", `→ ${bb(p.pot)} BB`, ""],
     [ALL_IN]: ["Tapis", `${bb(p.allin)} BB`, "btn-allin"],
   };
-  // Ordre d'affichage croissant : fold, call, ¼, ⅓, ½, pot, tapis
-  const order = [FOLD, CHECK_CALL, RAISE_QUARTER, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN];
+  // Ordre d'affichage croissant : fold, call, ⅓, ½, pot, tapis
+  const order = [FOLD, CHECK_CALL, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN];
   for (const a of order) {
     if (!state.legal_actions.includes(a)) continue;
     const [label, sub, cls] = defs[a];
@@ -148,7 +147,7 @@ function log(html, cls = "") {
 }
 
 const ACTION_LABELS = ["fold", "check/call", "relance ½ pot", "relance pot",
-                       "all-in", "relance ¼ pot", "relance ⅓ pot"];
+                       "all-in", "relance ⅓ pot"];
 
 function describeAction(ev) {
   const who = ev.who === "toi" ? "Toi" : "IA";
@@ -207,7 +206,7 @@ async function processState(state, isNewHand) {
       setStatus("L'IA réfléchit…");
       await sleep(650);
       showAiBubble(["Je passe.", "Check / call.", "Relance ½ pot !", "Relance pot !",
-                    "TAPIS !", "Petite relance…", "Relance ⅓ pot"][ev.action]);
+                    "TAPIS !", "Petite relance…"][ev.action]);
       applySnapshot(ev);
       log(describeAction(ev), "ai");
     } else {
@@ -464,7 +463,7 @@ document.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
   if (key === "n" && currentState && currentState.terminal) return void newHand();
   const map = { f: FOLD, c: CHECK_CALL, r: RAISE_HALF, p: RAISE_POT, a: ALL_IN,
-                q: RAISE_QUARTER, t: RAISE_THIRD };
+                t: RAISE_THIRD };
   if (key in map) playAction(map[key]);
 });
 

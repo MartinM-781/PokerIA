@@ -1,6 +1,6 @@
 //! Traversée MCCFR external-sampling — port exact de poker_ai/cfr.py.
-//! Nœud = [f32; 14] : [0..7] régrets, [7..14] somme de stratégie (abstraction
-//! v3 à 7 actions : fold, call, ½, pot, tapis, ¼, ⅓).
+//! Nœud = [f32; 12] : [0..6] régrets, [6..12] somme de stratégie (abstraction
+//! v3 à 6 actions : fold, call, ½, pot, tapis, ⅓).
 
 use std::collections::HashMap;
 
@@ -8,8 +8,8 @@ use crate::bucket::{card_bucket_v2, infoset_key, preflop_class};
 use crate::game::{Hand, BB, PREFLOP};
 use crate::rng::Rng;
 
-pub const N_ACT: usize = 7; // actions de l'abstraction v3
-pub const NODE: usize = 2 * N_ACT; // régrets [0..7] + stratégie [7..14]
+pub const N_ACT: usize = 6; // actions de l'abstraction v3 (½, pot, tapis, ⅓)
+pub const NODE: usize = 2 * N_ACT; // régrets [0..6] + stratégie [6..12]
 
 pub type Nodes = HashMap<String, [f32; NODE]>;
 
