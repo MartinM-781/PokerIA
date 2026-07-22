@@ -95,7 +95,7 @@ function fmtEta(min) {
 
 /* ------------------------------------------------------------- bloc CFR */
 
-const CFR_TARGET = 3000000;
+const CFR_TARGET = 12000000;
 
 function renderCfr(cfr, cfrMetrics) {
   const section = $("cfr-section");
