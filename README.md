@@ -170,9 +170,22 @@ Les blueprints sont interchangeables entre les deux cœurs (même pickle).
 # compiler le cœur natif (Rust + maturin ; toolchain GNU, pas besoin de MSVC)
 cd native && maturin build --release && pip install target/wheels/poker_native-*.whl
 
-# l'entraînement choisit le natif automatiquement (--engine python pour forcer le repli)
+# entraîneur natif recommandé : mono-processus, ouvriers = threads Rust
+# fusionnés en RAM. Aucun fichier ouvrier sur le disque, un seul checkpoint par cycle.
+python train_cfr_native.py --workers 6 --chunk 250000
+
+# variante multi-processus (repli Python pur possible via --engine python)
 python train_cfr_parallel.py --workers 3 --chunk 250000
 ```
+
+### Empreinte disque
+
+L'ancien découpage multi-processus écrivait **une copie complète du blueprint
+par ouvrier à chaque cycle** (6 × ~430 Mo), plus la fusion — soit plusieurs Go
+d'écritures par cycle. L'entraîneur natif garde la table vivante côté Rust et
+ne touche au disque que pour le blueprint (**une écriture par cycle**), avec la
+fusion des threads faite en mémoire (parité bit à bit vérifiée avec l'ancienne
+fusion sur disque).
 
 ## Limites et pistes d'amélioration
 

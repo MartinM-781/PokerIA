@@ -125,3 +125,43 @@ pub fn run_iteration(nodes: &mut Nodes, iterations: u64, rng: &mut Rng, n_sims: 
     let mut cache = DealCache::new(version);
     traverse(&hand, traverser, nodes, rng, &mut cache, n_sims);
 }
+
+/// Fusionne les tables de `workers` sur `base` : final = Σ workers − (k−1)·base,
+/// régrets ET stratégie replanchés à zéro (RM+), nœuds nuls élagués.
+/// Reproduit exactement merge_workers() de train_cfr_parallel.py — mais en RAM,
+/// sans jamais écrire de fichiers ouvriers sur le disque.
+pub fn merge(base: &Nodes, workers: Vec<Nodes>) -> Nodes {
+    let k = workers.len() as f32;
+    let scale = -(k - 1.0);
+    let mut acc: Nodes = Nodes::with_capacity(base.len());
+    for (key, node) in base {
+        let mut v = *node;
+        for x in v.iter_mut() {
+            *x *= scale;
+        }
+        acc.insert(key.clone(), v);
+    }
+    for w in workers {
+        for (key, node) in w {
+            match acc.get_mut(&key) {
+                Some(e) => {
+                    for i in 0..10 {
+                        e[i] += node[i];
+                    }
+                }
+                None => {
+                    acc.insert(key, node);
+                }
+            }
+        }
+    }
+    acc.retain(|_, node| {
+        for x in node.iter_mut() {
+            if *x < 0.0 {
+                *x = 0.0;
+            }
+        }
+        node.iter().any(|&x| x != 0.0) // élague les nœuds entièrement nuls
+    });
+    acc
+}

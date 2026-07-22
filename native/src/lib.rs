@@ -77,6 +77,36 @@ impl NativeStore {
         self.iterations += n;
     }
 
+    /// Un cycle parallèle EN MÉMOIRE : `workers` threads calculent chacun `chunk`
+    /// itérations sur une copie de la table courante, puis on fusionne — sans
+    /// jamais écrire de fichiers ouvriers sur le disque. Remplace le découpage
+    /// en processus + pickles de train_cfr_parallel.py pour le moteur natif.
+    fn run_parallel(&mut self, py: Python<'_>, workers: usize, chunk: u64, base_seed: u64, n_sims: usize) {
+        let version = self.version;
+        let start = self.iterations;
+        let base = &self.nodes;
+        let merged = py.allow_threads(|| {
+            let locals: Vec<traverse::Nodes> = std::thread::scope(|s| {
+                let handles: Vec<_> = (0..workers)
+                    .map(|w| {
+                        s.spawn(move || {
+                            let mut local = base.clone();
+                            let mut rng = Rng::new(base_seed.wrapping_add(w as u64));
+                            for t in start..start + chunk {
+                                traverse::run_iteration(&mut local, t, &mut rng, n_sims, version);
+                            }
+                            local
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            traverse::merge(base, locals)
+        });
+        self.nodes = merged;
+        self.iterations += workers as u64 * chunk;
+    }
+
     fn __len__(&self) -> usize {
         self.nodes.len()
     }
