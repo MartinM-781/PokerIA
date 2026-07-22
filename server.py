@@ -61,11 +61,12 @@ class ApiError(Exception):
 class GameSession:
     """Une session de jeu humain contre IA, protégée par un verrou."""
 
-    def __init__(self, model_path, n_sims, seed=None, temperature=0.004):
+    def __init__(self, model_path, n_sims, seed=None, temperature=0.004, search=False):
         self.rng = np.random.default_rng(seed)
         self.model_path = model_path
         self.n_sims = n_sims
         self.temperature = temperature
+        self.search = search  # recherche temps réel à la river (blueprints CFR)
         self.model_mtime = os.path.getmtime(model_path)
         self.ai = self._build_policy()
         self.lock = threading.Lock()
@@ -79,8 +80,19 @@ class GameSession:
         self._load_session()
 
     def _build_policy(self):
-        """Cerveau selon l'extension : .pkl = blueprint CFR, .npz = réseau DQN."""
+        """Cerveau selon l'extension : .pkl = blueprint CFR (avec recherche
+        temps réel à la river si --search), .npz = réseau DQN."""
         if self.model_path.endswith(".pkl"):
+            if self.search:
+                try:
+                    import poker_native
+                    from poker_ai.search import SearchPolicy
+                    print("Cerveau : blueprint + recherche temps réel (river)", flush=True)
+                    return SearchPolicy(self.model_path, self.rng, poker_native,
+                                        n_sims=max(self.n_sims, 160))
+                except ImportError:
+                    print("poker_native absent : recherche désactivée, blueprint seul",
+                          flush=True)
             from poker_ai.cfr import CFRPolicy
             return CFRPolicy(self.model_path, self.rng, n_sims=max(self.n_sims, 160))
         return NetworkPolicy(QNetwork.load(self.model_path), self.rng, eps=0.0,
@@ -529,6 +541,8 @@ def main():
                         help="stratégie mixte : 0 = toujours l'action optimale, "
                              "0.004 = mélange les décisions serrées (~0,5 BB)")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--search", action="store_true",
+                        help="active la recherche temps réel à la river (blueprint CFR + résolution)")
     args = parser.parse_args()
 
     if args.model is None:
@@ -542,7 +556,7 @@ def main():
         sys.exit(1)
 
     session = GameSession(args.model, n_sims=args.sims, seed=args.seed,
-                          temperature=args.temperature)
+                          temperature=args.temperature, search=args.search)
     brain = "blueprint CFR (équilibre de Nash)" if args.model.endswith(".pkl") else "réseau DQN"
     print(f"Cerveau chargé : {brain} — {args.model}")
 
