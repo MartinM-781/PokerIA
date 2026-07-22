@@ -93,13 +93,9 @@ pub fn draw_flag(hole: &[u8; 2], board: &[u8]) -> u8 {
     0
 }
 
-/// Bucket v2 — chaîne identique à card_bucket_v2.
-pub fn card_bucket_v2(hand: &Hand, player: usize, rng: &mut Rng, n_sims: usize) -> String {
-    if hand.street == PREFLOP {
-        return preflop_class(&hand.hole[player]);
-    }
-    let board = hand.board();
-    let eq = equity_vs_random(&hand.hole[player], board, n_sims, rng);
+/// Cœur du bucket v2 postflop, à partir des composants (l'équité est fournie
+/// par l'appelant — permet le calcul par lot sans objet Hand).
+pub fn card_bucket_v2_from_parts(hole: &[u8; 2], board: &[u8], street: u8, eq: f64) -> String {
     let (paired, flush_possible) = board_texture(board);
     let mut suffix = String::new();
     if paired {
@@ -108,17 +104,27 @@ pub fn card_bucket_v2(hand: &Hand, player: usize, rng: &mut Rng, n_sims: usize) 
     if flush_possible {
         suffix.push('F');
     }
-    if hand.street == RIVER {
+    if street == RIVER {
         let b = ((eq * N_BUCKETS_RIVER as f64) as usize).min(N_BUCKETS_RIVER - 1);
         return format!("r{}{}", b, suffix);
     }
     let b = ((eq * N_BUCKETS as f64) as usize).min(N_BUCKETS - 1);
-    let draw = draw_flag(&hand.hole[player], board);
+    let draw = draw_flag(hole, board);
     if draw > 0 {
         format!("{}{}D{}", b, suffix, draw)
     } else {
         format!("{}{}", b, suffix)
     }
+}
+
+/// Bucket v2 — chaîne identique à card_bucket_v2 Python.
+pub fn card_bucket_v2(hand: &Hand, player: usize, rng: &mut Rng, n_sims: usize) -> String {
+    if hand.street == PREFLOP {
+        return preflop_class(&hand.hole[player]);
+    }
+    let board = hand.board();
+    let eq = equity_vs_random(&hand.hole[player], board, n_sims, rng);
+    card_bucket_v2_from_parts(&hand.hole[player], board, hand.street, eq)
 }
 
 /// Historique public : actions 'fchpa', streets séparées par '/'.

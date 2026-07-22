@@ -6,6 +6,8 @@ mod bucket;
 mod equity;
 mod eval;
 mod game;
+mod range;
+mod resolve;
 mod rng;
 mod traverse;
 
@@ -184,6 +186,54 @@ fn py_draw_flag(hole: Vec<u8>, board: Vec<u8>) -> u8 {
     bucket::draw_flag(&[hole[0], hole[1]], &board)
 }
 
+/// Équité d'une main contre une range pondérée de mains adverses.
+#[pyfunction]
+#[pyo3(name = "equity_vs_range")]
+fn py_equity_vs_range(hole: Vec<u8>, board: Vec<u8>, pairs: Vec<(u8, u8)>,
+                      weights: Vec<f64>, n_sims: usize, seed: u64) -> f64 {
+    let mut rng = Rng::new(seed);
+    range::equity_vs_range(&[hole[0], hole[1]], &board, &pairs, &weights, n_sims, &mut rng)
+}
+
+/// Buckets d'un lot de mains candidates (pour le suivi de range).
+#[pyfunction]
+#[pyo3(name = "buckets_batch")]
+fn py_buckets_batch(board: Vec<u8>, street: u8, pairs: Vec<(u8, u8)>,
+                    n_sims: usize, seed: u64) -> Vec<String> {
+    let mut rng = Rng::new(seed);
+    range::buckets_batch(&board, street, &pairs, n_sims, &mut rng)
+}
+
+/// Résolution temps réel de la street courante (CFR range-vs-range).
+/// Renvoie (n_mains_héros, 6) : stratégie moyenne par main possible du héros.
+#[pyfunction]
+#[pyo3(name = "solve_street")]
+#[allow(clippy::too_many_arguments)]
+fn py_solve_street<'py>(
+    py: Python<'py>,
+    board: Vec<u8>,
+    hero_hands: Vec<(u8, u8)>, hero_weights: Vec<f64>,
+    opp_hands: Vec<(u8, u8)>, opp_weights: Vec<f64>,
+    invested: (i32, i32), bets: (i32, i32), stacks: (i32, i32),
+    last_raise: i32, raises: u8, acted: (bool, bool), hero_to_act: bool,
+    iterations: usize, n_runouts: usize, seed: u64,
+) -> PyResult<Bound<'py, PyArray2<f64>>> {
+    let strat = py.allow_threads(|| {
+        resolve::solve_street(
+            &board, &hero_hands, &hero_weights, &opp_hands, &opp_weights,
+            [invested.0, invested.1], [bets.0, bets.1], [stacks.0, stacks.1],
+            last_raise, raises, [acted.0, acted.1], hero_to_act,
+            iterations, n_runouts, seed,
+        )
+    });
+    let n = strat.len();
+    let mut flat = Vec::with_capacity(n * 6);
+    for row in &strat {
+        flat.extend_from_slice(row);
+    }
+    numpy::PyArray1::from_vec(py, flat).reshape([n, 6]).map_err(Into::into)
+}
+
 #[pymodule]
 fn poker_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NativeStore>()?;
@@ -192,5 +242,8 @@ fn poker_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_equity, m)?)?;
     m.add_function(wrap_pyfunction!(py_preflop_class, m)?)?;
     m.add_function(wrap_pyfunction!(py_draw_flag, m)?)?;
+    m.add_function(wrap_pyfunction!(py_equity_vs_range, m)?)?;
+    m.add_function(wrap_pyfunction!(py_buckets_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(py_solve_street, m)?)?;
     Ok(())
 }
