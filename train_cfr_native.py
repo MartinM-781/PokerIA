@@ -12,6 +12,7 @@ Usage :
 """
 import argparse
 import os
+import threading
 import time
 
 import numpy as np
@@ -41,8 +42,9 @@ def play_match(policy, opponent, n_hands, rng):
 def main():
     parser = argparse.ArgumentParser(description="MCCFR natif mono-processus")
     parser.add_argument("--iters", type=int, default=12_000_000)
-    parser.add_argument("--workers", type=int, default=6)
-    parser.add_argument("--chunk", type=int, default=250_000,
+    parser.add_argument("--workers", type=int, default=12,
+                        help="threads de calcul (pic vers 10-12 sur cette machine)")
+    parser.add_argument("--chunk", type=int, default=200_000,
                         help="itérations par thread et par cycle")
     parser.add_argument("--sims", type=int, default=160)
     parser.add_argument("--eval-hands", type=int, default=600)
@@ -73,20 +75,13 @@ def main():
     start_iters = trainer.iterations
     print(f"MCCFR natif : {args.workers} threads × {args.chunk} itérations/cycle, "
           f"départ à {start_iters}, objectif {args.iters} "
-          f"(mono-processus, aucun fichier ouvrier)", flush=True)
+          f"(mono-processus ; éval superposée au calcul)", flush=True)
 
-    per_cycle = args.workers * args.chunk
-    t0 = time.time()
-    while trainer.iterations < args.iters:
-        seed = args.seed + trainer.iterations  # graine distincte par cycle
-        trainer.run_cycle(args.workers, args.chunk, seed, args.sims)
-        i = trainer.iterations
-        speed = (i - start_iters) / max(time.time() - t0, 1e-9)
-        eta = (args.iters - i) / max(speed, 1e-9) / 60
-        safe_append(progress_path, [i, len(trainer), round(speed, 1), round(eta)])
-
-        # Point de contrôle : snapshot → évaluation → sauvegarde
-        snap = trainer.snapshot()
+    def checkpoint(snap):
+        """Évalue et sauvegarde un instantané. Tourne sur le thread principal
+        PENDANT que les threads Rust du cycle suivant calculent (GIL relâché) :
+        les cœurs ne s'arrêtent jamais pour l'évaluation."""
+        i = snap.iterations
         eval_rng = np.random.default_rng(10_000 + i)
         policy = CFRPolicy(snap, eval_rng, n_sims=args.sims)
         bb_rule, se_rule = play_match(policy, RuleBot(eval_rng, 128), args.eval_hands, eval_rng)
@@ -98,11 +93,30 @@ def main():
         safe_append(metrics_path, [i, round(bb_rule, 1), round(se_rule, 1),
                                    round(bb_dqn, 1), round(se_dqn, 1)])
         snap.save(blueprint_path)
-        print(f"[{i:>9}/{args.iters}] {len(trainer):>7} situations "
+        speed = (i - start_iters) / max(time.time() - t0, 1e-9)
+        eta = (args.iters - i) / max(speed, 1e-9) / 60
+        safe_append(progress_path, [i, len(snap.nodes), round(speed, 1), round(eta)])
+        print(f"[{i:>9}/{args.iters}] {len(snap.nodes):>7} situations "
               f"| bb/100 vs règles {bb_rule:+7.1f} (±{se_rule:.0f}) "
               f"vs DQN {bb_dqn:+7.1f} | {speed:.0f} it/s", flush=True)
-        del snap, policy
 
+    t0 = time.time()
+    pending = None  # instantané en attente d'évaluation (superposé au calcul)
+    while trainer.iterations < args.iters:
+        seed = args.seed + trainer.iterations  # graine distincte par cycle
+        # Lance le calcul du cycle dans un thread : run_parallel relâche le GIL,
+        # donc le checkpoint du cycle précédent tourne en parallèle ci-dessous.
+        compute = threading.Thread(
+            target=trainer.run_cycle, args=(args.workers, args.chunk, seed, args.sims))
+        compute.start()
+        if pending is not None:
+            checkpoint(pending)
+            pending = None
+        compute.join()
+        pending = trainer.snapshot()
+
+    if pending is not None:  # dernier checkpoint (plus rien à superposer)
+        checkpoint(pending)
     print("Objectif atteint.", flush=True)
 
 
