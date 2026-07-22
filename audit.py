@@ -57,6 +57,9 @@ def audit(model_path, n_hands, seed=7, n_sims=300):
                     "to_call_bb": to_call / game.BB,
                     "pot_bb": hand.pot / game.BB,
                     "draw": _draw_flag(hand.hole[AI], hand.board) if hand.street in (1, 2) else 0,
+                    "button": hand.button == AI,
+                    "facing_bet": to_call > 0,
+                    "was_aggressor": hand.last_aggressor == AI,
                     "action": action,
                 })
                 hand.step(action)
@@ -115,15 +118,116 @@ def report(decisions, results):
           f"{raises / len(decisions) * 100:.0f} % relance/mise")
 
 
+def _tier(equity_preflop):
+    """Force préflop en 4 niveaux d'après l'équité contre main aléatoire."""
+    if equity_preflop >= 0.60:
+        return "premium"
+    if equity_preflop >= 0.50:
+        return "bonne"
+    if equity_preflop >= 0.42:
+        return "marginale"
+    return "faible"
+
+
+def build_aggregates(decisions, results):
+    """Statistiques de style agrégées — le dossier que lisent les coachs."""
+    def rate(group, pred):
+        return round(sum(1 for d in group if pred(d)) / max(len(group), 1) * 100, 1)
+
+    def action_mix(group):
+        return {"n": len(group),
+                "fold_%": rate(group, lambda d: d["action"] == game.FOLD),
+                "call_%": rate(group, lambda d: d["action"] == game.CHECK_CALL),
+                "raise_%": rate(group, lambda d: d["action"] >= game.RAISE_HALF)}
+
+    pre = [d for d in decisions if d["street"] == game.PREFLOP]
+    agg = {"resultat_bb100": round(float(np.mean(results)) * 100, 1),
+           "mains": len(results), "decisions": len(decisions)}
+
+    # Préflop par position et force de main
+    agg["preflop"] = {}
+    for pos, label in [(True, "bouton"), (False, "big_blind")]:
+        group = [d for d in pre if d["button"] == pos]
+        agg["preflop"][label] = {t: action_mix([d for d in group
+                                                if _tier(d["equity"]) == t])
+                                 for t in ("premium", "bonne", "marginale", "faible")}
+
+    # Postflop : tirages vs mains faites à équité comparable (0.30-0.55)
+    zone = [d for d in decisions if d["street"] in (1, 2) and 0.30 <= d["equity"] <= 0.55]
+    agg["semi_bluff"] = {
+        "avec_tirage": action_mix([d for d in zone if d["draw"] > 0]),
+        "main_faite": action_mix([d for d in zone if d["draw"] == 0]),
+    }
+
+    # Défense face aux mises, par street
+    agg["face_a_une_mise"] = {}
+    for st in (1, 2, 3):
+        group = [d for d in decisions if d["street"] == st and d["facing_bet"]]
+        agg["face_a_une_mise"][game.STREET_NAMES[st]] = action_mix(group)
+
+    # River : équilibre value/bluff quand le bot mise ou relance
+    river_bets = [d for d in decisions
+                  if d["street"] == game.RIVER and d["action"] >= game.RAISE_HALF]
+    agg["river_agression"] = {
+        "n": len(river_bets),
+        "value_%": rate(river_bets, lambda d: d["equity"] >= 0.60),
+        "bluff_%": rate(river_bets, lambda d: d["equity"] < 0.35),
+        "entre_deux_%": rate(river_bets, lambda d: 0.35 <= d["equity"] < 0.60),
+    }
+
+    # Continuation bet : agresseur préflop qui mise au flop
+    flop_as_aggressor = [d for d in decisions
+                         if d["street"] == game.FLOP and d["was_aggressor"]
+                         and not d["facing_bet"]]
+    agg["cbet_flop_%"] = rate(flop_as_aggressor, lambda d: d["action"] >= game.RAISE_HALF)
+    agg["cbet_flop_n"] = len(flop_as_aggressor)
+    return agg
+
+
+def flagged_hands(decisions):
+    out = []
+    for d in decisions:
+        label = None
+        if (d["action"] == game.CHECK_CALL and d["to_call_bb"] >= 8
+                and d["equity"] < d["pot_odds"] - 0.15):
+            label = "call_cher_sans_cote"
+        elif d["action"] == game.FOLD and d["equity"] > 0.70:
+            label = "fold_de_monstre"
+        elif (d["street"] == game.RIVER and d["action"] >= game.RAISE_HALF
+                and d["equity"] < 0.20):
+            label = "bluff_river"
+        if label:
+            out.append({"type": label,
+                        "street": game.STREET_NAMES[d["street"]],
+                        "cartes": cards_str(d["hole"]),
+                        "board": cards_str(d["board"]) or "-",
+                        "equite": round(d["equity"], 2),
+                        "cote_du_pot": round(d["pot_odds"], 2),
+                        "pot_bb": round(d["pot_bb"], 1),
+                        "a_payer_bb": round(d["to_call_bb"], 1),
+                        "action": ACTION_NAMES[d["action"]]})
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description="Révision de mains du bot (mode coach)")
     parser.add_argument("--model", default=os.path.join(BASE_DIR, "models", "cfr_blueprint.pkl"))
     parser.add_argument("--hands", type=int, default=400)
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--json", default=None, metavar="FICHIER",
+                        help="exporte le dossier complet (agrégats + mains signalées) en JSON")
     args = parser.parse_args()
     print(f"Audit de {args.model} sur {args.hands} mains (cartes visibles)…\n")
     decisions, results = audit(args.model, args.hands, seed=args.seed)
     report(decisions, results)
+    if args.json:
+        import json
+        payload = {"modele": args.model,
+                   "agregats": build_aggregates(decisions, results),
+                   "mains_signalees": flagged_hands(decisions)}
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=1)
+        print(f"\nDossier coach exporté : {args.json}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,205 @@
+{
+ "modele": "models/cfr_blueprint_v1_final.pkl",
+ "agregats": {
+  "resultat_bb100": 281.1,
+  "mains": 500,
+  "decisions": 1145,
+  "preflop": {
+   "bouton": {
+    "premium": {
+     "n": 51,
+     "fold_%": 3.9,
+     "call_%": 27.5,
+     "raise_%": 68.6
+    },
+    "bonne": {
+     "n": 118,
+     "fold_%": 28.0,
+     "call_%": 28.8,
+     "raise_%": 43.2
+    },
+    "marginale": {
+     "n": 61,
+     "fold_%": 54.1,
+     "call_%": 16.4,
+     "raise_%": 29.5
+    },
+    "faible": {
+     "n": 63,
+     "fold_%": 76.2,
+     "call_%": 9.5,
+     "raise_%": 14.3
+    }
+   },
+   "big_blind": {
+    "premium": {
+     "n": 47,
+     "fold_%": 10.6,
+     "call_%": 29.8,
+     "raise_%": 59.6
+    },
+    "bonne": {
+     "n": 114,
+     "fold_%": 29.8,
+     "call_%": 43.0,
+     "raise_%": 27.2
+    },
+    "marginale": {
+     "n": 59,
+     "fold_%": 45.8,
+     "call_%": 45.8,
+     "raise_%": 8.5
+    },
+    "faible": {
+     "n": 53,
+     "fold_%": 47.2,
+     "call_%": 50.9,
+     "raise_%": 1.9
+    }
+   }
+  },
+  "semi_bluff": {
+   "avec_tirage": {
+    "n": 67,
+    "fold_%": 20.9,
+    "call_%": 55.2,
+    "raise_%": 23.9
+   },
+   "main_faite": {
+    "n": 162,
+    "fold_%": 25.9,
+    "call_%": 46.9,
+    "raise_%": 27.2
+   }
+  },
+  "face_a_une_mise": {
+   "flop": {
+    "n": 104,
+    "fold_%": 58.7,
+    "call_%": 27.9,
+    "raise_%": 13.5
+   },
+   "turn": {
+    "n": 62,
+    "fold_%": 53.2,
+    "call_%": 25.8,
+    "raise_%": 21.0
+   },
+   "river": {
+    "n": 26,
+    "fold_%": 42.3,
+    "call_%": 34.6,
+    "raise_%": 23.1
+   }
+  },
+  "river_agression": {
+   "n": 44,
+   "value_%": 70.5,
+   "bluff_%": 15.9,
+   "entre_deux_%": 13.6
+  },
+  "cbet_flop_%": 46.3,
+  "cbet_flop_n": 54
+ },
+ "mains_signalees": [
+  {
+   "type": "call_cher_sans_cote",
+   "street": "préflop",
+   "cartes": "4♦ 2♦",
+   "board": "-",
+   "equite": 0.34,
+   "cote_du_pot": 0.49,
+   "pot_bb": 101.0,
+   "a_payer_bb": 99.0,
+   "action": "check/call"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "turn",
+   "cartes": "T♠ J♥",
+   "board": "5♠ 7♠ 3♦ T♣",
+   "equite": 0.76,
+   "cote_du_pot": 0.33,
+   "pot_bb": 12.0,
+   "a_payer_bb": 6.0,
+   "action": "se couche"
+  },
+  {
+   "type": "bluff_river",
+   "street": "river",
+   "cartes": "8♦ Q♣",
+   "board": "6♥ 3♦ 6♦ 2♥ 9♦",
+   "equite": 0.2,
+   "cote_du_pot": 0.0,
+   "pot_bb": 64.0,
+   "a_payer_bb": 0.0,
+   "action": "relance ½ pot"
+  },
+  {
+   "type": "bluff_river",
+   "street": "river",
+   "cartes": "6♥ K♠",
+   "board": "J♠ 5♥ 8♥ Q♦ 9♦",
+   "equite": 0.14,
+   "cote_du_pot": 0.0,
+   "pot_bb": 4.0,
+   "a_payer_bb": 0.0,
+   "action": "relance ½ pot"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "flop",
+   "cartes": "4♦ 5♠",
+   "board": "2♣ 3♠ 4♥",
+   "equite": 0.72,
+   "cote_du_pot": 0.49,
+   "pot_bb": 102.0,
+   "a_payer_bb": 98.0,
+   "action": "se couche"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "river",
+   "cartes": "9♠ 8♠",
+   "board": "3♠ 3♣ 8♥ 5♠ 6♣",
+   "equite": 0.76,
+   "cote_du_pot": 0.33,
+   "pot_bb": 48.0,
+   "a_payer_bb": 24.0,
+   "action": "se couche"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "flop",
+   "cartes": "5♦ Q♥",
+   "board": "A♦ Q♣ 4♥",
+   "equite": 0.72,
+   "cote_du_pot": 0.33,
+   "pot_bb": 4.0,
+   "a_payer_bb": 2.0,
+   "action": "se couche"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "turn",
+   "cartes": "6♥ Q♣",
+   "board": "7♦ 7♠ Q♦ K♣",
+   "equite": 0.76,
+   "cote_du_pot": 0.47,
+   "pot_bb": 106.0,
+   "a_payer_bb": 94.0,
+   "action": "se couche"
+  },
+  {
+   "type": "fold_de_monstre",
+   "street": "flop",
+   "cartes": "7♣ 8♥",
+   "board": "T♣ 8♦ 3♣",
+   "equite": 0.7,
+   "cote_du_pot": 0.33,
+   "pot_bb": 24.0,
+   "a_payer_bb": 12.0,
+   "action": "se couche"
+  }
+ ]
+}

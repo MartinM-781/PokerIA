@@ -1,5 +1,10 @@
 # PokerIA — Texas Hold'em Heads-Up : du Deep Q-Learning à l'équilibre de Nash
 
+[![tests](https://github.com/MartinM-781/PokerIA/actions/workflows/ci.yml/badge.svg)](https://github.com/MartinM-781/PokerIA/actions/workflows/ci.yml)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![NumPy only](https://img.shields.io/badge/d%C3%A9pendances-NumPy%20uniquement-013243)
+[![Licence MIT](https://img.shields.io/badge/licence-MIT-green)](LICENSE)
+
 Une IA de poker écrite en Python avec **NumPy uniquement** — réseau de neurones,
 rétropropagation et algorithme MCCFR codés à la main, zéro dépendance lourde.
 Le projet a traversé trois générations : un DQN entraîné par self-play, puis un
@@ -43,6 +48,17 @@ python evaluate.py           # mesurer sa force contre 3 bots de référence
 
 Un modèle déjà entraîné est fourni dans `models/model.npz` — tu peux jouer
 directement avec `python server.py`.
+
+## Aperçu
+
+| La table de jeu | L'apprentissage en direct |
+|---|---|
+| ![Table de poker](docs/table.png) | ![Suivi de l'apprentissage](docs/training.png) |
+
+Les **bulletins scolaires** de l'IA — notes par matière (préflop, tirages,
+river, discipline) rédigés par le panel de coachs à chaque jalon
+d'entraînement — sont archivés dans
+[models/coach_reports/](models/coach_reports/).
 
 ## Le dashboard (table graphique)
 
