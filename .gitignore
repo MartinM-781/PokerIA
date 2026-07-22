@@ -13,3 +13,4 @@ models/session.json
 # Python
 __pycache__/
 *.pyc
+.claude/
