@@ -27,7 +27,7 @@ from train_cfr import safe_append
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-RAM_CEILING = 0.90  # ne jamais utiliser plus de 90 % de la RAM machine
+RAM_CEILING = 0.93  # ne jamais utiliser plus de 93 % de la RAM machine
 
 
 def _ram_gb():
@@ -51,9 +51,13 @@ def adaptive_workers(want, n_nodes, growth_nodes_per_thread):
     table (~140 o/nœud) puis la fait grossir pendant son bloc ; la fusion garde
     toutes les copies vivantes brièvement. On garde 10 % de la machine libre."""
     avail, total = _ram_gb()
+    # `avail` (ullAvailPhys) inclut déjà le cache disque réclamable — c'est la
+    # vraie mémoire mobilisable, pas le « libre strict ».
     budget = max(avail - (1.0 - RAM_CEILING) * total, 0.5)
-    per_thread = (n_nodes + growth_nodes_per_thread) * 140 / 1e9 + 0.05
-    return max(2, min(want, int(budget / per_thread) - 1))
+    # ~130 o/nœud en RAM (clé String + 12 float32 + surcoût HashMap), mesuré.
+    per_thread = (n_nodes + growth_nodes_per_thread) * 130 / 1e9 + 0.05
+    # plancher 1 thread de marge (au lieu de -1) : moins un cran de prudence.
+    return max(2, min(want, int(budget / per_thread)))
 
 
 def play_match(policy, opponent, n_hands, rng):
