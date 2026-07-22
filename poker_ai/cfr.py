@@ -111,12 +111,16 @@ def infoset_key(hand, player, bucket):
 
 
 # ---------------------------------------------------------------- stockage
+#
+# Un nœud = UN tableau float32 de 10 : [0:5] = régrets, [5:10] = somme de
+# stratégie. Un seul objet NumPy par situation au lieu de deux + une liste :
+# ~35 % de RAM en moins sur des tables de plusieurs millions de nœuds.
 
-REGRET, STRAT = 0, 1
+N_A = game.N_ACTIONS  # 5
 
 
 class NodeStore:
-    """key → [régrets (5,), somme de stratégie (5,)]."""
+    """key → tableau (10,) float32 : régrets [0:5], stratégie moyenne [5:10]."""
 
     def __init__(self, version=LATEST_VERSION):
         self.nodes = {}
@@ -126,19 +130,16 @@ class NodeStore:
     def get(self, key):
         node = self.nodes.get(key)
         if node is None:
-            # float32 : des millions de situations en mémoire, la précision suffit
-            node = [np.zeros(game.N_ACTIONS, dtype=np.float32),
-                    np.zeros(game.N_ACTIONS, dtype=np.float32)]
+            node = np.zeros(2 * N_A, dtype=np.float32)
             self.nodes[key] = node
         return node
 
     def save(self, path):
-        # Les nœuds sont déjà en float32 : on sérialise la table telle quelle,
-        # sans en construire une copie (2× la RAM — cause d'OOM à 4 ouvriers).
+        # Sérialise la table telle quelle, sans copie (2× la RAM sinon).
         tmp = path + ".tmp"
         with open(tmp, "wb") as f:
             pickle.dump({"iterations": self.iterations, "nodes": self.nodes,
-                         "version": self.version},
+                         "version": self.version, "format": 2},
                         f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, path)
 
@@ -148,8 +149,12 @@ class NodeStore:
             data = pickle.load(f)
         store = cls(version=data.get("version", 1))  # anciens fichiers = v1
         store.iterations = data["iterations"]
-        store.nodes = {k: [r.astype(np.float32), s.astype(np.float32)]
-                       for k, (r, s) in data["nodes"].items()}
+        if data.get("format", 1) == 2:
+            store.nodes = data["nodes"]
+        else:  # migration : ancien format [régrets, stratégie] séparés
+            store.nodes = {k: np.concatenate([np.asarray(r, dtype=np.float32),
+                                              np.asarray(s, dtype=np.float32)])
+                           for k, (r, s) in data["nodes"].items()}
         return store
 
 
@@ -195,7 +200,9 @@ def traverse(hand, traverser, store, rng, cache):
     mask = np.zeros(game.N_ACTIONS, dtype=bool)
     mask[legal] = True
     node = store.get(infoset_key(hand, p, cache.bucket(hand, p)))
-    sigma = matched_strategy(node[REGRET], mask)
+    regret = node[:N_A]   # vues sur le tableau unique
+    strat = node[N_A:]
+    sigma = matched_strategy(regret, mask)
 
     if p == traverser:
         util = np.zeros(game.N_ACTIONS)
@@ -204,11 +211,11 @@ def traverse(hand, traverser, store, rng, cache):
             child.step(a)
             util[a] = traverse(child, traverser, store, rng, cache)
         value = float((sigma * util).sum())
-        node[REGRET][mask] += util[mask] - value
-        np.maximum(node[REGRET], 0.0, out=node[REGRET])  # regret matching+
+        regret[mask] += util[mask] - value
+        np.maximum(regret, 0.0, out=regret)  # regret matching+
         return value
 
-    node[STRAT][mask] += sigma[mask]  # stratégie moyenne (nœud échantillonné)
+    strat[mask] += sigma[mask]  # stratégie moyenne (nœud échantillonné)
     action = int(rng.choice(game.N_ACTIONS, p=sigma))
     child = hand.clone()
     child.step(action)
@@ -269,10 +276,10 @@ class CFRPolicy:
                     break
         if node is None:  # vraiment jamais rien vu d'approchant : repli prudent
             return game.CHECK_CALL
-        probs = np.where(mask, node[STRAT].astype(np.float64), 0.0)
+        probs = np.where(mask, node[N_A:].astype(np.float64), 0.0)
         total = probs.sum()
         if total <= 1e-9:  # pas encore de stratégie moyenne : regret matching
-            probs = matched_strategy(node[REGRET], mask)
+            probs = matched_strategy(node[:N_A], mask)
         else:
             probs = probs / total
         return int(self.rng.choice(game.N_ACTIONS, p=probs))

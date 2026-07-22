@@ -33,59 +33,71 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- ouvrier
 
-def run_worker(base_path, out_path, chunk, seed, n_sims):
-    rng = np.random.default_rng(seed)
+def run_worker(base_path, out_path, chunk, seed, n_sims, engine):
     if os.path.exists(base_path):
         store = NodeStore.load(base_path)
     else:
         store = NodeStore()
-    target = store.iterations + chunk
-    while store.iterations < target:
-        run_iteration(store, rng, n_sims=n_sims)
+    if engine == "native":
+        from poker_ai.native import run_chunk_native
+        run_chunk_native(store, chunk, seed, n_sims)
+    else:
+        rng = np.random.default_rng(seed)
+        target = store.iterations + chunk
+        while store.iterations < target:
+            run_iteration(store, rng, n_sims=n_sims)
     store.save(out_path)
 
 
 # ----------------------------------------------------------------- fusion
 
-def _load_raw(path):
+def _load_raw_nodes(path):
+    """Charge une table en format unifié (tableau de 10 par nœud),
+    en migrant à la volée l'ancien format [régrets, stratégie]."""
     with open(path, "rb") as f:
-        return pickle.load(f)
+        data = pickle.load(f)
+    if data.get("format", 1) != 2:
+        data["nodes"] = {k: np.concatenate([np.asarray(r, dtype=np.float32),
+                                            np.asarray(s, dtype=np.float32)])
+                         for k, (r, s) in data["nodes"].items()}
+        data["format"] = 2
+    return data
 
 
-def merge_workers(base_path, worker_paths, chunk):
+def merge_workers(base_path, worker_paths, chunk, version):
     """Fusionne : final = Σ ouvriers − (K−1) × base. Renvoie un NodeStore."""
+    from poker_ai.cfr import N_A
     k = len(worker_paths)
     if os.path.exists(base_path):
-        base = _load_raw(base_path)
+        base = _load_raw_nodes(base_path)
         base_nodes = base["nodes"]
         base_iters = base["iterations"]
     else:
         base_nodes, base_iters = {}, 0
 
-    scale = -(k - 1)
-    acc = {key: [r * scale, s * scale] for key, (r, s) in base_nodes.items()}
+    scale = np.float32(-(k - 1))
+    acc = {key: node * scale for key, node in base_nodes.items()}
     del base_nodes
 
     for path in worker_paths:
-        data = _load_raw(path)
-        for key, (r, s) in data["nodes"].items():
-            node = acc.get(key)
-            if node is None:
-                acc[key] = [r.copy(), s.copy()]
+        data = _load_raw_nodes(path)
+        for key, node in data["nodes"].items():
+            existing = acc.get(key)
+            if existing is None:
+                acc[key] = node.copy()
             else:
-                node[0] += r
-                node[1] += s
+                existing += node
         del data
 
-    store = NodeStore()
+    store = NodeStore(version=version)
     store.iterations = base_iters + k * chunk
     empty_keys = []
     for key, node in acc.items():
-        np.maximum(node[0], 0.0, out=node[0])  # regret matching+ après fusion
-        np.maximum(node[1], 0.0, out=node[1])
+        np.maximum(node[:N_A], 0.0, out=node[:N_A])  # regret matching+ après fusion
+        np.maximum(node[N_A:], 0.0, out=node[N_A:])
         # Élagage : un nœud tout à zéro est identique à un nœud absent
         # (stratégie uniforme dans les deux cas) — inutile de le stocker.
-        if not node[0].any() and not node[1].any():
+        if not node.any():
             empty_keys.append(key)
     for key in empty_keys:
         del acc[key]
@@ -103,6 +115,8 @@ def main():
                         help="itérations par ouvrier et par cycle")
     parser.add_argument("--sims", type=int, default=160)
     parser.add_argument("--eval-hands", type=int, default=600)
+    parser.add_argument("--engine", choices=["native", "python", "auto"], default="auto",
+                        help="cœur de calcul des ouvriers : natif (Rust, ~×90) ou Python pur")
     parser.add_argument("--out", default=os.path.join(BASE_DIR, "models"))
     # mode interne : processus ouvrier
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
@@ -111,8 +125,12 @@ def main():
     parser.add_argument("--seed", type=int, default=0, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
+    if args.engine == "auto":
+        from poker_ai.native import NATIVE_AVAILABLE
+        args.engine = "native" if NATIVE_AVAILABLE else "python"
+
     if args.worker:
-        run_worker(args.base, args.dest, args.chunk, args.seed, args.sims)
+        run_worker(args.base, args.dest, args.chunk, args.seed, args.sims, args.engine)
         return
 
     blueprint_path = os.path.join(args.out, "cfr_blueprint.pkl")
@@ -133,11 +151,18 @@ def main():
     dqn_net = QNetwork.load(dqn_path) if os.path.exists(dqn_path) else None
 
     iterations = 0
+    version = None
     if os.path.exists(blueprint_path):
         with open(blueprint_path, "rb") as f:
-            iterations = pickle.load(f)["iterations"]
+            header = pickle.load(f)
+        iterations = header["iterations"]
+        version = header.get("version", 1)
+        del header
+    if version is None:
+        from poker_ai.cfr import LATEST_VERSION
+        version = LATEST_VERSION
     print(f"MCCFR parallèle : {args.workers} ouvriers × {args.chunk} itérations/cycle, "
-          f"départ à {iterations}, objectif {args.iters}", flush=True)
+          f"départ à {iterations}, objectif {args.iters}, moteur {args.engine}", flush=True)
 
     t0 = time.time()
     start_iters = iterations
@@ -153,6 +178,7 @@ def main():
             cmd = [sys.executable, os.path.abspath(__file__), "--worker",
                    "--base", blueprint_path, "--dest", dest,
                    "--chunk", str(args.chunk), "--sims", str(args.sims),
+                   "--engine", args.engine,
                    "--seed", str(iterations * 100 + w)]
             procs.append(subprocess.Popen(cmd, cwd=BASE_DIR))
         failed = sum(p.wait() != 0 for p in procs)
@@ -161,7 +187,7 @@ def main():
             continue
 
         # 2. fusion
-        store = merge_workers(blueprint_path, worker_paths, args.chunk)
+        store = merge_workers(blueprint_path, worker_paths, args.chunk, version)
         iterations = store.iterations
 
         # 3. évaluation + checkpoint

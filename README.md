@@ -150,6 +150,30 @@ Monte-Carlo (12 niveaux) + texture du board. Suivi dans
 `models/cfr_progress.csv` et `models/cfr_metrics.csv` (force mesurée contre le
 bot à règles et contre le DQN v3 à chaque checkpoint).
 
+## Performances — le cœur compilé (Rust)
+
+Le chemin chaud du MCCFR (moteur de jeu, évaluateur 7 cartes, équité
+Monte-Carlo, buckets, traversée) existe en deux implémentations :
+
+| Cœur | Vitesse mesurée (1 ouvrier) | |
+|---|---|---|
+| Python pur (NumPy) | 33 it/s | référence, toujours disponible |
+| **Rust (poker_native)** | **3 030 it/s** | **×93** — mesuré sur 5 000 itérations, i7-13700H |
+
+La parité est validée par une batterie stricte : scores de l'évaluateur
+**identiques au bit près** sur 100 000 tirages, moteur de jeu **identique au
+jeton près** sur 10 000 séquences rejouées pas à pas, clés d'infoset octet
+pour octet (169 classes préflop, drapeaux de tirage), équité à ±0,011.
+Les blueprints sont interchangeables entre les deux cœurs (même pickle).
+
+```bash
+# compiler le cœur natif (Rust + maturin ; toolchain GNU, pas besoin de MSVC)
+cd native && maturin build --release && pip install target/wheels/poker_native-*.whl
+
+# l'entraînement choisit le natif automatiquement (--engine python pour forcer le repli)
+python train_cfr_parallel.py --workers 3 --chunk 250000
+```
+
 ## Limites et pistes d'amélioration
 
 - Le DQN produit une stratégie **déterministe** : très solide contre des bots,
