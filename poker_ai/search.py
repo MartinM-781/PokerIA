@@ -27,7 +27,7 @@ class SearchPolicy:
     """Politique = blueprint préflop + résolution temps réel postflop."""
 
     def __init__(self, store_or_path, rng, native, n_sims=200,
-                 iterations=120, n_runouts=60):
+                 iterations=120, n_runouts=60, streets=(game.RIVER,)):
         self.store = (store_or_path if isinstance(store_or_path, NodeStore)
                       else NodeStore.load(store_or_path))
         self.rng = rng
@@ -35,6 +35,11 @@ class SearchPolicy:
         self.blueprint = CFRPolicy(self.store, rng, n_sims=n_sims)
         self.iterations = iterations
         self.n_runouts = n_runouts
+        # Streets où l'on résout en temps réel. Par défaut : la RIVER seule —
+        # c'est la street où le modèle de feuilles (abattage direct) est EXACT,
+        # donc où la résolution domine provablement le blueprint. Au flop/turn,
+        # les feuilles ignorent les enchères futures (mesuré neutre en duel).
+        self.streets = set(streets)
         self.ranges = None
         self._hand_sig = None
         self._decision = 0
@@ -71,7 +76,14 @@ class SearchPolicy:
     # ------------------------------------------------------------------- jeu
 
     def act(self, hand, player):
-        if self.native is None or hand.street == game.PREFLOP:
+        if self.native is None or hand.street not in self.streets:
+            # hors des streets de recherche : blueprint, mais on garde les
+            # ranges à jour pour quand la recherche s'activera
+            if self.native is not None and hand.street != game.PREFLOP:
+                try:
+                    self._sync_ranges(hand, player)
+                except Exception:
+                    pass
             return self.blueprint.act(hand, player)
         try:
             return self._act_search(hand, player)
@@ -85,8 +97,15 @@ class SearchPolicy:
         pairs_h, w_h = self.ranges.normalized(player)
         my_hole = (int(hand.hole[player][0]), int(hand.hole[player][1]))
 
-        opp_pairs, opp_w = self._trim(pairs_o, w_o, TOP_K)
-        hero_pairs, hero_w = self._trim(pairs_h, w_h, TOP_K, must_include=my_hole)
+        # À la river le board est complet : équité déterministe (1 passage) et
+        # petit arbre → on peut se payer plus d'itérations et des ranges élargies.
+        river = hand.street == game.RIVER
+        keep = 200 if river else TOP_K
+        iters = max(self.iterations, 250) if river else self.iterations
+        runouts = 1 if river else self.n_runouts
+
+        opp_pairs, opp_w = self._trim(pairs_o, w_o, keep)
+        hero_pairs, hero_w = self._trim(pairs_h, w_h, keep, must_include=my_hole)
 
         self._decision += 1
         strat = self.native.solve_street(
@@ -98,7 +117,7 @@ class SearchPolicy:
             int(hand.last_raise), int(hand.raises_this_street),
             (bool(hand.acted[player]), bool(hand.acted[opp])),
             True,
-            self.iterations, self.n_runouts,
+            iters, runouts,
             int(self.rng.integers(1 << 60)),
         )
         my_sig = tuple(sorted(my_hole))
