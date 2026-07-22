@@ -166,14 +166,20 @@ class NetworkPolicy:
         self.temperature = temperature
 
     def act(self, hand, player):
-        mask = hand.legal_mask()
+        # Le réseau peut avoir moins de sorties que le jeu n'a d'actions (DQN
+        # figé à 5 sorties face à un moteur à 7 actions) : il ne considère alors
+        # que SES actions (indices 0..out_dim-1), les tailles ajoutées lui sont
+        # invisibles — comportement voulu, il ne les a jamais apprises.
+        x = extract_features(hand, player, self.rng, self.n_sims)
+        q_all = self.net.predict(x)[0]
+        na = len(q_all)
+        mask = hand.legal_mask()[:na]
         if self.eps > 0 and self.rng.random() < self.eps:
             return int(self.rng.choice(np.flatnonzero(mask)))
-        x = extract_features(hand, player, self.rng, self.n_sims)
-        q = np.where(mask, self.net.predict(x)[0], -np.inf)
+        q = np.where(mask, q_all, -np.inf)
         if self.temperature > 0:
             z = (q - q.max()) / self.temperature
             probs = np.exp(z)
             probs /= probs.sum()
-            return int(self.rng.choice(len(q), p=probs))
+            return int(self.rng.choice(na, p=probs))
         return int(np.argmax(q))

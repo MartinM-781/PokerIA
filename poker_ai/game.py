@@ -5,15 +5,22 @@ chaque main. Le bouton poste la petite blind et parle en premier préflop,
 en dernier après le flop.
 
 Actions discrètes : FOLD, CHECK_CALL, RAISE_HALF (relance ½ pot),
-RAISE_POT (relance pot), ALL_IN.
+RAISE_POT (relance pot), ALL_IN, plus deux petites tailles RAISE_QUARTER
+(¼ pot) et RAISE_THIRD (⅓ pot) ajoutées aux indices 5 et 6 — les indices 0..4
+restent inchangés pour rester compatibles avec le réseau DQN figé.
 """
 import numpy as np
 
 from .evaluator import evaluate_hand
 
-FOLD, CHECK_CALL, RAISE_HALF, RAISE_POT, ALL_IN = range(5)
-N_ACTIONS = 5
-ACTION_NAMES = ["se couche", "check/call", "relance ½ pot", "relance pot", "all-in"]
+FOLD, CHECK_CALL, RAISE_HALF, RAISE_POT, ALL_IN, RAISE_QUARTER, RAISE_THIRD = range(7)
+N_ACTIONS = 7
+ACTION_NAMES = ["se couche", "check/call", "relance ½ pot", "relance pot",
+                "all-in", "relance ¼ pot", "relance ⅓ pot"]
+
+# Fraction du pot (après call) misée par chaque action de relance, en
+# arithmétique ENTIÈRE identique côté Rust. all-in traité à part.
+RAISE_SIZES = (RAISE_QUARTER, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN)
 
 PREFLOP, FLOP, TURN, RIVER = range(4)
 STREET_NAMES = ["préflop", "flop", "turn", "river"]
@@ -72,7 +79,7 @@ class HeadsUpHand:
         if self.bets[o] > self.bets[p]:
             legal.insert(0, FOLD)
         if self.stacks[p] > self.bets[o] - self.bets[p] and self.stacks[o] > 0:
-            legal += [RAISE_HALF, RAISE_POT, ALL_IN]
+            legal += [RAISE_QUARTER, RAISE_THIRD, RAISE_HALF, RAISE_POT, ALL_IN]
         return legal
 
     def legal_mask(self):
@@ -94,7 +101,7 @@ class HeadsUpHand:
             return
 
         can_raise = self.stacks[p] > to_call and self.stacks[o] > 0
-        if action in (RAISE_HALF, RAISE_POT, ALL_IN) and not can_raise:
+        if action in RAISE_SIZES and not can_raise:
             action = CHECK_CALL  # garde-fou : action illégale rétrogradée
 
         if action in (FOLD, CHECK_CALL):  # FOLD sans mise à payer = check
@@ -104,7 +111,11 @@ class HeadsUpHand:
         else:
             self.history.append((self.street, p, action))
             pot_after_call = self.pot + to_call
-            if action == RAISE_HALF:
+            if action == RAISE_QUARTER:
+                raise_by = pot_after_call // 4
+            elif action == RAISE_THIRD:
+                raise_by = pot_after_call // 3
+            elif action == RAISE_HALF:
                 raise_by = pot_after_call // 2
             elif action == RAISE_POT:
                 raise_by = pot_after_call

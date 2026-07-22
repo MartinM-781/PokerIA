@@ -23,8 +23,10 @@ from .features import _board_texture
 
 N_BUCKETS = 12          # buckets d'équité postflop (v1)
 N_BUCKETS_RIVER = 16    # v2 : river plus fine (plus de tirages, que des mains faites)
-LATEST_VERSION = 2      # version d'abstraction des nouveaux blueprints
-ACTION_CHARS = "fchpa"  # fold, check/call, half-pot, pot, all-in
+LATEST_VERSION = 3      # v3 : ajoute les tailles ¼ et ⅓ pot
+# fold, check/call, half-pot, pot, all-in, quarter-pot, third-pot
+# (l'ordre suit les indices d'action du moteur)
+ACTION_CHARS = "fchpaqt"
 
 
 # ------------------------------------------------------------- abstraction
@@ -90,7 +92,8 @@ def card_bucket_v2(hand, player, rng, n_sims=160):
     return f"{b}{suffix}D{draw}" if draw else f"{b}{suffix}"
 
 
-BUCKET_FNS = {1: card_bucket, 2: card_bucket_v2}
+# v3 partage l'abstraction de cartes de v2 (seul l'espace d'actions diffère).
+BUCKET_FNS = {1: card_bucket, 2: card_bucket_v2, 3: card_bucket_v2}
 
 
 def history_key(hand):
@@ -112,25 +115,32 @@ def infoset_key(hand, player, bucket):
 
 # ---------------------------------------------------------------- stockage
 #
-# Un nœud = UN tableau float32 de 10 : [0:5] = régrets, [5:10] = somme de
-# stratégie. Un seul objet NumPy par situation au lieu de deux + une liste :
-# ~35 % de RAM en moins sur des tables de plusieurs millions de nœuds.
+# Un nœud = UN tableau float32 de 2·N : [0:N] = régrets, [N:2N] = somme de
+# stratégie, où N = nombre d'actions de l'abstraction (5 pour v1/v2, 7 pour v3).
+# Un seul objet NumPy par situation : compact en RAM sur des millions de nœuds.
 
-N_A = game.N_ACTIONS  # 5
+N_A = game.N_ACTIONS  # 7 (abstraction courante)
+
+
+def n_actions_for(version):
+    """Nombre d'actions de l'abstraction d'un blueprint (les indices 0..4 sont
+    communs à toutes les versions ; v3 ajoute ¼ et ⅓ pot aux indices 5 et 6)."""
+    return 7 if version >= 3 else 5
 
 
 class NodeStore:
-    """key → tableau (10,) float32 : régrets [0:5], stratégie moyenne [5:10]."""
+    """key → tableau (2·N,) float32 : régrets [0:N], stratégie moyenne [N:2N]."""
 
     def __init__(self, version=LATEST_VERSION):
         self.nodes = {}
         self.iterations = 0
-        self.version = version  # version d'abstraction des buckets
+        self.version = version  # version d'abstraction des buckets et des tailles
+        self.n_actions = n_actions_for(version)
 
     def get(self, key):
         node = self.nodes.get(key)
         if node is None:
-            node = np.zeros(2 * N_A, dtype=np.float32)
+            node = np.zeros(2 * self.n_actions, dtype=np.float32)
             self.nodes[key] = node
         return node
 
@@ -139,7 +149,8 @@ class NodeStore:
         tmp = path + ".tmp"
         with open(tmp, "wb") as f:
             pickle.dump({"iterations": self.iterations, "nodes": self.nodes,
-                         "version": self.version, "format": 2},
+                         "version": self.version, "format": 2,
+                         "n_actions": self.n_actions},
                         f, protocol=pickle.HIGHEST_PROTOCOL)
         os.replace(tmp, path)
 
@@ -155,6 +166,12 @@ class NodeStore:
             store.nodes = {k: np.concatenate([np.asarray(r, dtype=np.float32),
                                               np.asarray(s, dtype=np.float32)])
                            for k, (r, s) in data["nodes"].items()}
+        # Le nombre d'actions est déduit du fichier, ou de la taille des nœuds
+        # (compatibilité avec les blueprints v1/v2 à 5 actions).
+        if "n_actions" in data:
+            store.n_actions = data["n_actions"]
+        elif store.nodes:
+            store.n_actions = len(next(iter(store.nodes.values()))) // 2
         return store
 
 
@@ -264,8 +281,9 @@ class CFRPolicy:
         return [f"{prefix}{b + d}{suffix}" for d in (-1, 1, -2, 2) if b + d >= 0]
 
     def act(self, hand, player):
-        legal = hand.legal_actions()
-        mask = np.zeros(game.N_ACTIONS, dtype=bool)
+        na = self.store.n_actions  # 5 pour un blueprint v1/v2, 7 pour v3
+        legal = [a for a in hand.legal_actions() if a < na]
+        mask = np.zeros(na, dtype=bool)
         mask[legal] = True
         bucket = self.bucket_fn(hand, player, self.rng, self.n_sims)
         node = self.store.nodes.get(infoset_key(hand, player, bucket))
@@ -276,10 +294,10 @@ class CFRPolicy:
                     break
         if node is None:  # vraiment jamais rien vu d'approchant : repli prudent
             return game.CHECK_CALL
-        probs = np.where(mask, node[N_A:].astype(np.float64), 0.0)
+        probs = np.where(mask, node[na:].astype(np.float64), 0.0)
         total = probs.sum()
         if total <= 1e-9:  # pas encore de stratégie moyenne : regret matching
-            probs = matched_strategy(node[:N_A], mask)
+            probs = matched_strategy(node[:na], mask)
         else:
             probs = probs / total
-        return int(self.rng.choice(game.N_ACTIONS, p=probs))
+        return int(self.rng.choice(na, p=probs))

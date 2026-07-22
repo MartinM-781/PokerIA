@@ -32,17 +32,17 @@ impl NativeStore {
         NativeStore { nodes: Nodes::default(), iterations: 0, version }
     }
 
-    /// Charge la table depuis (clés, valeurs (N,10) float32).
+    /// Charge la table depuis (clés, valeurs (N, NODE) float32).
     fn load_nodes(&mut self, keys: Vec<String>, values: PyReadonlyArray2<f32>) -> PyResult<()> {
         let arr = values.as_array();
-        if arr.shape() != [keys.len(), 10] {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "values doit être de forme (len(keys), 10)"));
+        if arr.shape() != [keys.len(), traverse::NODE] {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "values doit être de forme (len(keys), {})", traverse::NODE)));
         }
         self.nodes.reserve(keys.len());
         for (i, key) in keys.into_iter().enumerate() {
-            let mut node = [0f32; 10];
-            for j in 0..10 {
+            let mut node = [0f32; traverse::NODE];
+            for j in 0..traverse::NODE {
                 node[j] = arr[[i, j]];
             }
             self.nodes.insert(key, node);
@@ -50,16 +50,16 @@ impl NativeStore {
         Ok(())
     }
 
-    /// Exporte la table : (clés, valeurs (N,10) float32).
+    /// Exporte la table : (clés, valeurs (N, NODE) float32).
     fn export_nodes<'py>(&self, py: Python<'py>) -> PyResult<(Vec<String>, Bound<'py, PyArray2<f32>>)> {
         let n = self.nodes.len();
         let mut keys = Vec::with_capacity(n);
-        let mut flat = Vec::with_capacity(n * 10);
+        let mut flat = Vec::with_capacity(n * traverse::NODE);
         for (k, v) in &self.nodes {
             keys.push(k.clone());
             flat.extend_from_slice(v);
         }
-        let arr = numpy::PyArray1::from_vec(py, flat).reshape([n, 10])?;
+        let arr = numpy::PyArray1::from_vec(py, flat).reshape([n, traverse::NODE])?;
         Ok((keys, arr))
     }
 

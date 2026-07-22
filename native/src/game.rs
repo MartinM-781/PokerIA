@@ -7,6 +7,8 @@ pub const CHECK_CALL: u8 = 1;
 pub const RAISE_HALF: u8 = 2;
 pub const RAISE_POT: u8 = 3;
 pub const ALL_IN: u8 = 4;
+pub const RAISE_QUARTER: u8 = 5;
+pub const RAISE_THIRD: u8 = 6;
 
 pub const PREFLOP: u8 = 0;
 pub const RIVER: u8 = 3;
@@ -94,6 +96,8 @@ impl Hand {
         }
         legal.push(CHECK_CALL);
         if self.stacks[p] > self.bets[o] - self.bets[p] && self.stacks[o] > 0 {
+            legal.push(RAISE_QUARTER);
+            legal.push(RAISE_THIRD);
             legal.push(RAISE_HALF);
             legal.push(RAISE_POT);
             legal.push(ALL_IN);
@@ -113,9 +117,13 @@ impl Hand {
             return;
         }
 
+        // Une action de relance = RAISE_HALF/POT/ALL_IN (2..4) ou RAISE_QUARTER/
+        // THIRD (5..6). CHECK_CALL (1) et FOLD (0) n'en sont pas.
+        let is_raise = action == RAISE_HALF || action == RAISE_POT || action == ALL_IN
+            || action == RAISE_QUARTER || action == RAISE_THIRD;
         let can_raise = self.stacks[p] > to_call && self.stacks[o] > 0;
         let mut action = action;
-        if action >= RAISE_HALF && !can_raise {
+        if is_raise && !can_raise {
             action = CHECK_CALL; // garde-fou : action illégale rétrogradée
         }
 
@@ -127,6 +135,8 @@ impl Hand {
             self.history.push((self.street, p as u8, action));
             let pot_after_call = self.pot() + to_call;
             let mut raise_by = match action {
+                RAISE_QUARTER => pot_after_call / 4,
+                RAISE_THIRD => pot_after_call / 3,
                 RAISE_HALF => pot_after_call / 2,
                 RAISE_POT => pot_after_call,
                 _ => self.stacks[p],

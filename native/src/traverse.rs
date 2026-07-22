@@ -1,5 +1,6 @@
 //! Traversée MCCFR external-sampling — port exact de poker_ai/cfr.py.
-//! Nœud = [f32; 10] : [0..5] régrets, [5..10] somme de stratégie.
+//! Nœud = [f32; 14] : [0..7] régrets, [7..14] somme de stratégie (abstraction
+//! v3 à 7 actions : fold, call, ½, pot, tapis, ¼, ⅓).
 
 use std::collections::HashMap;
 
@@ -7,7 +8,10 @@ use crate::bucket::{card_bucket_v2, infoset_key, preflop_class};
 use crate::game::{Hand, BB, PREFLOP};
 use crate::rng::Rng;
 
-pub type Nodes = HashMap<String, [f32; 10]>;
+pub const N_ACT: usize = 7; // actions de l'abstraction v3
+pub const NODE: usize = 2 * N_ACT; // régrets [0..7] + stratégie [7..14]
+
+pub type Nodes = HashMap<String, [f32; NODE]>;
 
 /// Cache des buckets par (joueur, street) pour une donne — l'équité coûte cher.
 pub struct DealCache {
@@ -55,9 +59,9 @@ pub fn traverse(
     let key = infoset_key(hand, p, &bucket);
 
     // Stratégie par regret matching (copie locale : les enfants mutent la table)
-    let mut sigma = [0f64; 5];
+    let mut sigma = [0f64; N_ACT];
     {
-        let node = nodes.entry(key.clone()).or_insert([0f32; 10]);
+        let node = nodes.entry(key.clone()).or_insert([0f32; NODE]);
         let mut total = 0f64;
         for &a in &legal {
             let v = node[a as usize].max(0.0) as f64;
@@ -77,7 +81,7 @@ pub fn traverse(
     }
 
     if p == traverser {
-        let mut util = [0f64; 5];
+        let mut util = [0f64; N_ACT];
         let mut value = 0f64;
         for &a in &legal {
             let mut child = hand.clone();
@@ -95,7 +99,7 @@ pub fn traverse(
         {
             let node = nodes.get_mut(&key).expect("nœud disparu");
             for &a in &legal {
-                node[5 + a as usize] += sigma[a as usize] as f32;
+                node[N_ACT + a as usize] += sigma[a as usize] as f32;
             }
         }
         let r = rng.f64();
@@ -145,7 +149,7 @@ pub fn merge(base: &Nodes, workers: Vec<Nodes>) -> Nodes {
         for (key, node) in w {
             match acc.get_mut(&key) {
                 Some(e) => {
-                    for i in 0..10 {
+                    for i in 0..NODE {
                         e[i] += node[i];
                     }
                 }

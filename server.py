@@ -233,6 +233,8 @@ class GameSession:
 
         return {
             "call": int(min(to_call, h.stacks[HUMAN])),
+            "quarter": bet_to(pot_after_call // 4),
+            "third": bet_to(pot_after_call // 3),
             "half": bet_to(pot_after_call // 2),
             "pot": bet_to(pot_after_call),
             "allin": int(h.bets[HUMAN] + h.stacks[HUMAN]),
