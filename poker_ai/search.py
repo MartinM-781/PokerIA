@@ -27,7 +27,8 @@ class SearchPolicy:
     """Politique = blueprint préflop + résolution temps réel postflop."""
 
     def __init__(self, store_or_path, rng, native, n_sims=200,
-                 iterations=120, n_runouts=60, streets=(game.RIVER,)):
+                 iterations=120, n_runouts=60,
+                 streets=(game.FLOP, game.TURN, game.RIVER)):
         self.store = (store_or_path if isinstance(store_or_path, NodeStore)
                       else NodeStore.load(store_or_path))
         self.rng = rng
